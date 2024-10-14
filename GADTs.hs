@@ -51,7 +51,7 @@ oe2 = OIf (OIsZero (OAdd (OInt 3) (OInt (-3)))) (OInt 3) (OInt 4)
 
 -- Make an expression for "if true then false else true"
 oe3 :: OExp
-oe3 = undefined
+oe3 = OIf (OBool True) (OBool False) (OBool True)
 
 {-
 And here is an evaluator for these expressions. Note that the result type of
@@ -68,9 +68,13 @@ oevaluate = go
         (Just (Left i1), Just (Left i2)) -> Just (Left (i1 + i2))
         _ -> Nothing
     go (OIsZero e1) =
-      undefined
+      case go e1 of
+        (Just (Left i)) -> Just (Right (i == 0))
+        _ -> Nothing
     go (OIf e1 e2 e3) =
-      undefined
+      case (go e1, go e2, go e3) of
+        (Just (Right b), Just x, Just y) -> if b then Just x else Just y
+        _ -> Nothing
 
 {-
 Ugh. That Maybe/Either combination is awkward.
@@ -93,8 +97,10 @@ bad_oe2 :: OExp
 bad_oe2 = OIf (OInt 1) (OBool True) (OInt 3)
 
 -- >>> oevaluate bad_oe1
+-- Nothing
 
 -- >>> oevaluate bad_oe2
+-- Nothing
 
 {-
 A Typed Expression Evaluator
@@ -180,9 +186,9 @@ evaluate = go
     go (GBool b) = b
     go (GAdd e1 e2) = go e1 + go e2
     go (GIsZero e1) =
-      undefined
+      go e1 == 0
     go (GIf e1 e2 e3) =
-      undefined
+      if go e1 then go e2 else go e3
 
 {-
 Not only that, our evaluator is more efficient [1] because it does not need to
@@ -284,8 +290,15 @@ safeHd :: List NonEmpty a -> a
 safeHd (Cons h _) = h
 
 -- >>> safeHd ex1
+-- 1
 
 -- >>> safeHd ex0
+-- Couldn't match type 'Empty with 'NonEmpty
+-- Expected: List 'NonEmpty Int
+--   Actual: List 'Empty Int
+-- In the first argument of `safeHd', namely `ex0'
+-- In the expression: safeHd ex0
+-- In an equation for `it_au4G': it_au4G = safeHd ex0
 
 {-
 (In fact, including a case for `Nil` is not only not needed: it is not
@@ -294,12 +307,14 @@ allowed!)
 Compare this definition to the unsafe version of head.
 -}
 
--- unsafeHd :: [a] -> a
--- unsafeHd (x : _) = x
+unsafeHd :: [a] -> a
+unsafeHd (x : _) = x
 
 -- >>> unsafeHd [1,2]
+-- 1
 
 -- >>> unsafeHd []
+-- C:\Users\szhan\Downloads\cis5520\cis5520-07-GADTs\GADTs.hs:311:1-20: Non-exhaustive patterns in function unsafeHd
 
 {-
 This `Empty`/`NonEmpty` flag doesn't interact much with some of the list
@@ -307,7 +322,11 @@ functions. For example, `foldr` works for both empty and nonempty lists.
 -}
 
 foldr' :: (a -> b -> b) -> b -> List f a -> b
-foldr' = undefined
+foldr' f b ls =
+  case ls of
+    Nil -> foldr f b []
+    Cons x xs ->
+      foldr' f (f x b) xs
 
 {-
 But the `foldr1` variant (which assumes that the list is nonempty and
@@ -316,7 +335,11 @@ nonempty.
 -}
 
 foldr1' :: (a -> a -> a) -> List NonEmpty a -> a
-foldr1' = undefined
+foldr1' f (Cons x xs) = 
+  case xs of
+    Nil -> x
+    Cons _ _ -> f x (foldr1' f xs)
+
 
 {-
 The type of `map` becomes stronger in an interesting way: It says that
@@ -327,7 +350,8 @@ type check. (Though, sadly, it would still type check if we had two
 -}
 
 map' :: (a -> b) -> List f a -> List f b
-map' = undefined
+map' f Nil = Nil
+map' f (Cons x xs) = Cons (f x) (map' f xs)
 
 {-
 For `filter`, we don't know whether the output list will be empty or
@@ -364,7 +388,10 @@ use pattern matching.  For example:
 -}
 
 isNonempty :: OldList a -> Maybe (List NonEmpty a)
-isNonempty = undefined
+isNonempty (OL ls) =
+  case ls of
+    Nil -> Nothing
+    Cons _ _ -> Just ls
 
 {-
 Now we can use `OldList` as the result of `filter'`, with a bit of
@@ -372,10 +399,19 @@ additional pattern matching.
 -}
 
 filter' :: (a -> Bool) -> List f a -> OldList a
-filter' = undefined
+filter' pred Nil = OL Nil
+filter' pred (Cons x xs) =
+  if pred x then
+    case filter' pred xs of
+      OL Nil -> OL (Cons x Nil)
+      OL ls -> OL (Cons x ls)
+  else filter' pred xs
 
 -- >>> filter' (== 2) (Cons 1 (Cons 2 (Cons 3 Nil)))
 -- OL (Cons 2 Nil)
+
+-- >>> filter' (== 2) (Cons 1 (Cons 3 (Cons 3 Nil)))
+-- OL Nil
 
 {-
 Although these examples are simple, GADTs and DataKinds can also work in much
