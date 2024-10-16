@@ -2,6 +2,7 @@
 {-
 ---
 fulltitle: Red Black Trees (with GADTs 3)
+date: October 16, 2024
 ---
 
 This version of RedBlack trees demonstrates the use of GADTs to
@@ -141,9 +142,9 @@ A "colored" tree
 
 -}
 
-data CT n c a where
-  E :: CT O Black a
-  N :: (Valid c c1 c2) => SColor c -> CT n c1 a -> a -> CT n c2 a -> CT (Incr c n) c a
+data T n c a where
+  E :: T O Black a
+  N :: (Valid c c1 c2) => SColor c -> T n c1 a -> a -> T n c2 a -> T (Incr c n) c a
 
 {-
 A type class that statically guarantees that Red nodes have Black children.
@@ -160,7 +161,7 @@ We define the RBT type by distinguishing the root of the tree.
 -}
 
 data RBT a where
-  Root :: CT n Black a -> RBT a
+  Root :: T n Black a -> RBT a
 
 {-
 Type class instances
@@ -173,7 +174,7 @@ deriving instance Show Color
 
 deriving instance (Show (SColor c))
 
-deriving instance (Show a) => Show (CT n c a)
+deriving instance (Show a) => Show (T n c a)
 
 deriving instance (Show a) => Show (RBT a)
 
@@ -186,7 +187,7 @@ instance Eq Color where
 
 -- Foldable instances
 
-deriving instance Foldable (CT n c)
+deriving instance Foldable (T n c)
 
 deriving instance Foldable RBT
 
@@ -216,7 +217,7 @@ Every tree has a color, determined by the following function.
 -}
 
 -- | access the color of the tree
-color :: CT n c a -> SColor c
+color :: T n c a -> SColor c
 color (N c _ _ _) = c
 color E = B
 
@@ -227,7 +228,7 @@ same for every path in the tree, so we only need to look at one side.
 -}
 
 -- | calculate the black height of the tree
-blackHeight :: CT n c a -> Int
+blackHeight :: T n c a -> Int
 blackHeight E = 1
 blackHeight (N c a _ _) = blackHeight a + (if c %== B then 1 else 0)
 
@@ -338,10 +339,6 @@ that it is equivalent [4].
 isBST :: (Ord a) => RBT a -> Bool
 isBST = orderedBy (<) . elements
 
-{-
->
--}
-
 -- | Are the elements in the list ordered by the provided operation?
 orderedBy :: (a -> a -> Bool) -> [a] -> Bool
 orderedBy op (x : y : xs) = x `op` y && orderedBy op (y : xs)
@@ -367,7 +364,7 @@ isRootBlack (Root t) = color t %== B
 consistentBlackHeight :: RBT a -> Bool
 consistentBlackHeight (Root t) = aux t
   where
-    aux :: CT n c a -> Bool
+    aux :: T n c a -> Bool
     aux (N _ a _ b) = blackHeight a == blackHeight b && aux a && aux b
     aux E = True
 
@@ -378,7 +375,7 @@ consistentBlackHeight (Root t) = aux t
 noRedRed :: RBT a -> Bool
 noRedRed (Root t) = aux t
   where
-    aux :: CT n c a -> Bool
+    aux :: T n c a -> Bool
     aux (N R a _ b) = color a %== B && color b %== B && aux a && aux b
     aux (N B a _ b) = aux a && aux b
     aux E = True
@@ -433,15 +430,11 @@ instance (Ord a, Arbitrary a) => Arbitrary (RBT a) where
   arbitrary :: Gen (RBT a)
   arbitrary = foldr insert empty <$> (arbitrary :: Gen [a])
 
-  {-
-  >
-  -}
-
   shrink :: RBT a -> [RBT a]
   shrink (Root E) = []
   shrink (Root (N _ l _ r)) = [hide l, hide r]
     where
-      hide :: CT n c a -> RBT a
+      hide :: T n c a -> RBT a
       hide E = Root E
       hide (N c l v r) = Root (N B l v r)
 
@@ -460,7 +453,7 @@ empty = Root E
 member :: (Ord a) => a -> RBT a -> Bool
 member x0 (Root t) = aux x0 t
   where
-    aux :: (Ord a) => a -> CT n c a -> Bool
+    aux :: (Ord a) => a -> T n c a -> Bool
     aux x E = False
     aux x (N _ a y b)
       | x < y = aux x a
@@ -471,9 +464,9 @@ insert :: (Ord a) => a -> RBT a -> RBT a
 insert x (Root t) = blacken (ins x t)
 
 data HT n a where
-  HN :: SColor c1 -> CT n c2 a -> a -> CT n c3 a -> HT (Incr c1 n) a
+  HN :: SColor c1 -> T n c2 a -> a -> T n c3 a -> HT (Incr c1 n) a
 
-ins :: (Ord a) => a -> CT n c a -> HT n a
+ins :: (Ord a) => a -> T n c a -> HT n a
 ins x E = HN R E x E
 ins x s@(N c a y b)
   | x < y = balanceL c (ins x a) y b
@@ -488,9 +481,6 @@ The original `balance` function looked like this:
 {-
 balance (N B (N R (N R a x b) y c) z d) = N R (N B a x b) y (N B c z d)
 balance (N B (N R a x (N R b y c)) z d) = N R (N B a x b) y (N B c z d)
-{-
->
--}
 
 balance (N B a x (N R (N R b y c) z d)) = N R (N B a x b) y (N B c z d)
 balance (N B a x (N R b y (N R c z d))) = N R (N B a x b) y (N B c z d)
@@ -508,7 +498,7 @@ inserted on the left, then we should balance on the left. If we inserted on
 the right, then we should balance on the right.
 -}
 
-balanceL :: SColor c1 -> HT n a -> a -> CT n c2 a -> HT (Incr c1 n) a
+balanceL :: SColor c1 -> HT n a -> a -> T n c2 a -> HT (Incr c1 n) a
 balanceL B (HN R (N R a x b) y c) z d = HN R (N B a x b) y (N B c z d)
 balanceL B (HN R a x (N R b y c)) z d = HN R (N B a x b) y (N B c z d)
 {-
@@ -521,7 +511,7 @@ balanceL c (HN R a@(N B _ _ _) x b@(N B _ _ _)) z d =
   HN c (N R a x b) z d
 balanceL c (HN R a x b) z d = error ("no case for " ++ show (color a) ++ " " ++ show (color b))
 
-balanceR :: SColor c1 -> CT n c2 a -> a -> HT n a -> HT (Incr c1 n) a
+balanceR :: SColor c1 -> T n c2 a -> a -> HT n a -> HT (Incr c1 n) a
 balanceR B a x (HN R (N R b y c) z d) = HN R (N B a x b) y (N B c z d)
 balanceR B a x (HN R b y (N R c z d)) = HN R (N B a x b) y (N B c z d)
 {-
@@ -554,8 +544,6 @@ prop_ShrinkValid t = conjoin (map prop_Valid (shrink t))
 
 {-
 \* Metamorphic Testing
-
-The fact that we are statically tetsing
 -}
 
 prop_InsertEmpty :: A -> Bool
@@ -564,10 +552,6 @@ prop_InsertEmpty x = elements (insert x empty) == [x]
 prop_InsertInsert :: A -> A -> RBT A -> Bool
 prop_InsertInsert x y t =
   insert x (insert y t) == insert y (insert x t)
-
-{-
->
--}
 
 prop_MemberEmpty :: A -> Bool
 prop_MemberEmpty x = not (member x empty)
